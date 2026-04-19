@@ -173,7 +173,7 @@ def main():
     parser = argparse.ArgumentParser(description="Emoji Lookup CLI")
     parser.add_argument("--fasttext-dim", type=int, default=300, 
                         help="Dimension of fastText vectors. If < 300, the model will be reduced. (default: 300)")
-    parser.add_argument("--train", action="store_true", 
+    parser.add_argument("--train", "-t", action="store_true",
                         help="Train a fastText model on the emoji descriptions locally instead of loading a pre-trained model.")
     args = parser.parse_args()
 
