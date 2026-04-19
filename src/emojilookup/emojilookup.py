@@ -28,17 +28,34 @@ def load_emojis(file_path):
                 emojis.append((emoji, description))
     return emojis
 
-def train_fasttext_model(emojis, dim=300, model_path="emoji_model.bin"):
+def get_cache_dir():
+    """Return a platform-specific cache directory for emojilookup."""
+    if sys.platform == 'win32':
+        cache_base = os.environ.get('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local'))
+    elif sys.platform == 'darwin':
+        cache_base = os.path.expanduser('~/Library/Caches')
+    else:
+        cache_base = os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
+    
+    cache_dir = os.path.join(cache_base, 'emojilookup')
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+def train_fasttext_model(emojis, dim=300, model_path=None):
+    if model_path is None:
+        model_path = os.path.join(get_cache_dir(), "emoji_model.bin")
+    
     print("Training fasttext model (dim: {}, target: {})".format(dim, model_path))
     # Prepare data for training
-    with open("temp_train.txt", "w", encoding="utf-8") as f:
+    temp_train = os.path.join(get_cache_dir(), "temp_train.txt")
+    with open(temp_train, "w", encoding="utf-8") as f:
         for _, description in emojis:
             f.write(description + "\n")
     
     # Train unsupervised skipgram model
-    model = fasttext.train_unsupervised("temp_train.txt", model='skipgram', dim=dim, minn=2, maxn=5, epoch=50)
+    model = fasttext.train_unsupervised(temp_train, model='skipgram', dim=dim, minn=2, maxn=5, epoch=50)
     model.save_model(model_path)
-    os.remove("temp_train.txt")
+    os.remove(temp_train)
     return model
 
 def cosine_similarity(v1, v2):
@@ -62,15 +79,25 @@ class EmojiLookup:
     def _load_fasttext_model(self, do_train: bool):
         if not do_train:
             import fasttext.util
-            print("Ensuring pre-trained fastText model (English) is available...")
-            fasttext.util.download_model('en', if_exists='ignore')
-            og_model_pth = 'cc.en.300.bin'
+            cache_dir = get_cache_dir()
+            print("Ensuring pre-trained fastText model (English) is available in {}...".format(cache_dir))
+            
+            # Fasttext.util.download_model always downloads to current directory.
+            # We must change to the cache directory temporarily.
+            old_cwd = os.path.abspath(os.getcwd())
+            os.chdir(cache_dir)
+            try:
+                fasttext.util.download_model('en', if_exists='ignore')
+            finally:
+                os.chdir(old_cwd)
+                
+            og_model_pth = os.path.join(cache_dir, 'cc.en.300.bin')
             
             if self.fasttext_dim >= 300:
                 print("Loading original 300-d fastText model from '{}'".format(og_model_pth))
                 return fasttext.load_model(og_model_pth)
                 
-            reduced_model_path = f'cc.en.{self.fasttext_dim}.bin'
+            reduced_model_path = os.path.join(cache_dir, f'cc.en.{self.fasttext_dim}.bin')
             if not os.path.isfile(reduced_model_path):
                 print("Loading original 300-d fastText model from '{}' for reduction".format(og_model_pth))
                 ft = fasttext.load_model(og_model_pth)
